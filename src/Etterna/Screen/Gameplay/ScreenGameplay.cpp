@@ -43,7 +43,6 @@
 #include "Etterna/Singletons/ScoreManager.h"
 #include "Etterna/Models/Misc/PlayerInfo.h"
 #include "Etterna/Models/Songs/SongOptions.h"
-#include "ScreenGameplayPractice.h"
 
 #include <algorithm>
 
@@ -1312,9 +1311,18 @@ ScreenGameplay::Input(const InputEventPlus& input) -> bool
 			bHoldingGiveUp |= (input.MenuI == GAME_BUTTON_START);
 		}
 
+		
+
+		RageTimer tm;
+		const auto currentTime = m_pSoundMusic->GetPositionSeconds(nullptr, &tm);
+		const auto firstSec = GAMESTATE->m_pCurSteps->firstsecond;
+		const auto bufferTime = 1.0;//1s before the notes start feels good from testing
+
 		// Exiting gameplay by holding Start (Forced Fail)
 		if (bHoldingGiveUp) {
-			if (input.type == IET_RELEASE) {
+			if (input.type == IET_RELEASE) {//just pressing start will skip the intro, holding it down still ends the file
+				if (currentTime < firstSec - bufferTime)
+					SetSongPosition(firstSec - bufferTime, 0.0f, false);
 				AbortGiveUp(true);
 			} else if (input.type == IET_FIRST_PRESS &&
 					   m_GiveUpTimer.IsZero()) {
@@ -1373,11 +1381,6 @@ ScreenGameplay::Input(const InputEventPlus& input) -> bool
 			return false;
 	}
 
-	RageTimer tm;
-	const float fSeconds = m_pSoundMusic->GetPositionSeconds(nullptr, &tm);
-
-	float firstSec = GAMESTATE->m_pCurSteps->firstsecond;// - fSeconds;
-
 	  /* Restart gameplay button moved from theme to allow for rebinding for
 	   * people who dont want to edit lua files :)
 	   */
@@ -1387,8 +1390,7 @@ ScreenGameplay::Input(const InputEventPlus& input) -> bool
 		bHoldingRestart |= input.MenuI == GAME_BUTTON_RESTART;
 	}
 	if (bHoldingRestart && (m_DancingState != STATE_OUTRO || AllAreFailing())) {
-		if (fSeconds < firstSec)
-		SetSongPosition(firstSec-2, 0.0f, false, false);
+		RestartGameplay();
 	}
 
 	// handle a step or battle item activate
@@ -1422,15 +1424,12 @@ ScreenGameplay::Input(const InputEventPlus& input) -> bool
 void
 ScreenGameplay::SetSongPosition(float newSongPositionSeconds,
 								float noteDelay,
-								bool hardSeek,
-								bool unpause)
+								bool hardSeek)
 {
-	const auto isPaused = GAMESTATE->GetPaused();
+	//not completely sure what parts of this function are necessary for just jumping forward, and what parts are tied to practice mode
+	//i took out stuff that i'm certain isn't needed but i'm not sure i've taken out everything that's vestigial
 	auto p = m_pSoundMusic->GetParams();
 
-	// If paused, we need to move fast so dont use slow seeking
-	// but if we want to hard seek, we dont care about speed
-	p.m_bAccurateSync = !isPaused || hardSeek;
 	m_pSoundMusic->SetParams(p);
 
 	// realign mp3 files by seeking backwards to force a full reseek, then
@@ -1445,12 +1444,6 @@ ScreenGameplay::SetSongPosition(float newSongPositionSeconds,
 	SOUND->SetSoundPosition(m_pSoundMusic, newSongPositionSeconds - noteDelay);
 	UpdateSongPosition(0);
 
-	// Unpause the music if we want it unpaused
-	if (unpause && isPaused) {
-		m_pSoundMusic->Pause(false);
-		GAMESTATE->SetPaused(false);
-	}
-
 	// Restart the notedata for the row we just moved to until the end of the
 	// file
 	Steps* pSteps = GAMESTATE->m_pCurSteps;
@@ -1458,11 +1451,7 @@ ScreenGameplay::SetSongPosition(float newSongPositionSeconds,
 	const auto fNotesBeat =
 	  pTiming->GetBeatFromElapsedTime(newSongPositionSeconds);
 	const auto rowNow = BeatToNoteRow(fNotesBeat);
-	// lastReportedSeconds = newSongPositionSeconds;
-
-	// just having a message we can respond to directly is probably the best way
-	// to reset lua elements
-	// MESSAGEMAN->Broadcast("PracticeModeReset");
+	
 }
 
 /* Saving StageStats that are affected by the note pattern is a little tricky:
@@ -1499,14 +1488,6 @@ ScreenGameplay::SaveStats()
 	NoteDataWithScoring::GetActualRadarValues(nd, pss, rv);
 	pss.m_radarActual += rv;
 	GAMESTATE->SetProcessedTimingData(nullptr);
-}
-
-void
-ScreenGameplay::SkipIntro()
-{
-	float fs = GAMESTATE->m_pCurSteps->firstsecond;
-
-	UpdateSongPosition(100);
 }
 
 void

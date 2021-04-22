@@ -108,11 +108,9 @@ class ScreenGameplay : public ScreenWithMenuElements
 
 	virtual void RestartGameplay();
 
-	void SkipIntro();
 	void ScreenGameplay::SetSongPosition(float newSongPositionSeconds,
 										 float noteDelay,
-										 bool hardSeek,
-										 bool unpause);
+										 bool hardSeek);
 
 	virtual void SetupNoteDataFromRow(Steps* pSteps, int row);
 
